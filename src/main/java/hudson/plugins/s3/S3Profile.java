@@ -1,31 +1,25 @@
 package hudson.plugins.s3;
 
+import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.model.*;
 import hudson.FilePath;
+import hudson.ProxyConfiguration;
+import hudson.model.Run;
+import hudson.plugins.s3.callable.*;
+import hudson.util.Secret;
+import jenkins.model.Jenkins;
+import org.apache.commons.io.FilenameUtils;
+import org.kohsuke.stapler.DataBoundConstructor;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
-import hudson.ProxyConfiguration;
-import hudson.plugins.s3.callable.*;
-import jenkins.model.Jenkins;
-import org.apache.commons.io.FilenameUtils;
-import org.kohsuke.stapler.DataBoundConstructor;
-
-import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.DeleteObjectRequest;
-import com.amazonaws.services.s3.model.GetObjectRequest;
-import com.amazonaws.services.s3.model.ListObjectsRequest;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
-import com.google.common.collect.Lists;
-
-import hudson.model.Run;
-import hudson.util.Secret;
+import static com.google.common.collect.Lists.newArrayList;
+import static com.google.common.collect.Lists.partition;
 
 public class S3Profile {
     private final String name;
@@ -129,30 +123,15 @@ public class S3Profile {
                                     final boolean gzipFiles) throws IOException, InterruptedException {
         final List<FingerprintRecord> fingerprints = new ArrayList<>(fileNames.size());
 
-        boolean batchUpload = true;
         int batchUploadSize = 100;
-        List<List<FilePath>> pathBatches = new ArrayList<>();
-        List<List<String>> nameBatches = new ArrayList<>();
-        if (batchUpload) {
-            while (fileNames.size() > 0) {
-                List<FilePath> pathBatch = new ArrayList<>(batchUploadSize);
-                List<String> nameBatch = new ArrayList<>(batchUploadSize);
-                for (int i = 0; i < batchUploadSize || !fileNames.isEmpty(); i++) {
-                    pathBatch.add(filePaths.get(0));
-                    nameBatch.add(fileNames.get(0));
-                    fileNames.remove(0);
-                    filePaths.remove(0);
-                }
-                pathBatches.add(pathBatch);
-                nameBatches.add(nameBatch);
-            }
-        }
+        List<List<FilePath>> pathBatches = partition(filePaths, batchUploadSize);
+        List<List<String>> nameBatches = partition(fileNames, batchUploadSize);
 
         try {
             for (int k = 0; k < nameBatches.size(); k++) {
                 List<String> nameBatch = nameBatches.get(k);
                 List<FilePath> pathBatch = pathBatches.get(k);
-                for (int i = 0; i < pathBatch.size(); i++) {
+                for (int i = 0; i < nameBatch.size(); i++) {
                     final FilePath filePath = pathBatch.get(i);
                     final String fileName = nameBatch.get(i);
 
@@ -231,7 +210,7 @@ public class S3Profile {
         .withPrefix(dest.objectName)
         .withEncodingType("url");
 
-        final List<String> files = Lists.newArrayList();
+        final List<String> files = newArrayList();
 
         ObjectListing objectListing;
         do {
@@ -254,7 +233,7 @@ public class S3Profile {
                                                  final String excludeFilter,
                                                  final FilePath targetDir,
                                                  final boolean flatten) throws IOException, InterruptedException {
-          final List<FingerprintRecord> fingerprints = Lists.newArrayList();
+          final List<FingerprintRecord> fingerprints = newArrayList();
           for(final FingerprintRecord record : artifacts) {
               final S3Artifact artifact = record.getArtifact();
               final Destination dest = Destination.newFromRun(build, artifact);
